@@ -1,0 +1,1 @@
+Para buscar los cursos de cada magister
