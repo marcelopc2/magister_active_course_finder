@@ -10,6 +10,7 @@ from datetime import timezone  # Corregido
 # Configuración de la API de Canvas
 BASE_URL = config("URL")
 API_TOKEN = config("TOKEN")
+LINK_URL = config("LINK_URL")
 HEADERS = {
     "Authorization": f"Bearer {API_TOKEN}",
     "Content-Type": "application/json"
@@ -56,7 +57,7 @@ def canvas_request(session, method, endpoint, payload=None, paginated=False):
 def get_course_status(start_date_str):
     """Determina el estado del curso basado en su fecha de inicio"""
     if not start_date_str:
-        return "⏳ No ha comenzado (sin fecha definida)"
+        return "⏳ :orange[Sin fecha de inicio definida]"
 
     try:
         # Convertir string a fecha
@@ -71,11 +72,11 @@ def get_course_status(start_date_str):
         today = datetime.now(timezone.utc)  # Fecha actual en UTC
 
         if start_date <= today <= end_date:
-            return "✅ Curso Activo"
+            return "✅ :green[Curso Activo]"
         elif today > end_date:
-            return "🚫 Curso Finalizado"
+            return "🚫 :red[Curso Finalizado]"
         else:
-            return "⏳ No ha comenzado"
+            return "⏳ :orange[No ha comenzado]"
     except ValueError:
         return "❌ Error en formato de fecha"
 
@@ -94,6 +95,7 @@ account = 42
 
 st.set_page_config(page_title="Buscador de cursos de Magisteres", page_icon="🔍", layout="wide")
 st.title("Buscador de cursos de Magisteres 🔍")
+st.info("Este buscador permite encontrar cursos de Magisteres en Canvas basandose en la fecha de inicio del curso y sumandole un mes para determinar si está activo o no (ej: inicio = 2/3/25 + 1 mes = termino 2/4/25). Ya que generalmente no se coloca la fecha de finalización en la configuracion. Asi que tener presente esto.")
 
 # Mostrar checkbox antes del botón
 show_active_only = st.checkbox("Solo activos")
@@ -113,10 +115,9 @@ if st.button('Buscar cursos!!'):
                         if courses:
                             for course in courses:
                                 # Filtrar blueprints
-                                if 'blueprint' in clean_string(course['name']):
-                                    continue
-
                                 course_info = canvas_request(session, "get", f"/courses/{course['id']}")
+                                if course_info.get("blueprint") == True:
+                                    continue
                                 if course_info:
                                     start_date = course_info.get("start_at")  # Obtener fecha de inicio
                                     status = get_course_status(start_date)  # Evaluar estado del curso
@@ -127,8 +128,8 @@ if st.button('Buscar cursos!!'):
                                         continue
 
                                     # Mostrar curso con su estado y fecha de inicio, y convertir el nombre en enlace
-                                    course_link = f"[**{course['name']}**](https://{BASE_URL}/courses/{course['id']})"
-                                    st.write(f"📚 {course_link} (ID: {course['id']}) - {status} - 🗓️ Fecha de inicio: {formatted_date}")
+                                    course_link = f"[**{course['name']}**]({LINK_URL}/courses/{course['id']})"
+                                    st.write(f"📚 {course_link} ({course['sis_course_id']}) - {status} - 🗓️ Fecha de inicio: {formatted_date}")
 
     else:
         st.error("Error en la petición")
