@@ -132,7 +132,7 @@ if st.session_state.acceso_permitido:
                                         status = get_course_status(start_date)
                                         formatted_date = format_date(start_date)
 
-                                        if show_active_only and status != "✅ Curso Activo":
+                                        if show_active_only and "Curso Activo" not in status:
                                             continue
 
                                         course_link = f"[**{course['name']}**]({LINK_URL}/courses/{course['id']})"
