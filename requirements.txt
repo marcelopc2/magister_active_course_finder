@@ -1,0 +1,5 @@
+python-decouple==3.8
+python_dateutil==2.9.0.post0
+Requests==2.32.3
+streamlit==1.41.1
+streamlit==1.43.2
