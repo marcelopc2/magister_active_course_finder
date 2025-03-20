@@ -5,20 +5,22 @@ import re
 import unicodedata
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-from datetime import timezone  # Corregido
+from datetime import timezone  
 
 # Configuración de la API de Canvas
 BASE_URL = config("URL")
 API_TOKEN = config("TOKEN")
+APP_PASSWORD = config("APP_PASSWORD")
 LINK_URL = config("LINK_URL")
 HEADERS = {
     "Authorization": f"Bearer {API_TOKEN}",
     "Content-Type": "application/json"
 }
 
-# Crear una sesión de requests
 session = requests.Session()
 session.headers.update(HEADERS)
+
+PASSWORD_CORRECTA = APP_PASSWORD
 
 def clean_string(input_string: str) -> str:
     cleaned = input_string.strip().lower()
@@ -44,7 +46,7 @@ def canvas_request(session, method, endpoint, payload=None, paginated=False):
             data = response.json()
             if paginated:
                 results.extend(data)
-                url = response.links.get("next", {}).get("url")  # Siguiente página
+                url = response.links.get("next", {}).get("url")
             else:
                 return data
 
@@ -55,21 +57,16 @@ def canvas_request(session, method, endpoint, payload=None, paginated=False):
         return None
 
 def get_course_status(start_date_str):
-    """Determina el estado del curso basado en su fecha de inicio"""
     if not start_date_str:
         return "⏳ :orange[Sin fecha de inicio definida]"
 
     try:
-        # Convertir string a fecha
         start_date = datetime.strptime(start_date_str, "%Y-%m-%dT%H:%M:%SZ")
-        
-        # Convertir start_date a aware datetime (con zona horaria UTC)
         if start_date.tzinfo is None:
             start_date = start_date.replace(tzinfo=timezone.utc)
         
-        end_date = start_date + relativedelta(months=1)  # Sumar 1 mes
-        
-        today = datetime.now(timezone.utc)  # Fecha actual en UTC
+        end_date = start_date + relativedelta(months=1)
+        today = datetime.now(timezone.utc)
 
         if start_date <= today <= end_date:
             return "✅ :green[Curso Activo]"
@@ -81,13 +78,12 @@ def get_course_status(start_date_str):
         return "❌ Error en formato de fecha"
 
 def format_date(date_str):
-    """Convierte la fecha al formato día-mes-año"""
     if not date_str:
         return "❌ Fecha no disponible"
     
     try:
         date_obj = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ")
-        return date_obj.strftime("%d-%m-%Y")  # Formato día-mes-año
+        return date_obj.strftime("%d-%m-%Y")
     except ValueError:
         return "❌ Error en formato de fecha"
 
@@ -97,39 +93,52 @@ st.set_page_config(page_title="Buscador de cursos de Magisteres", page_icon="�
 st.title("Buscador de cursos de Magisteres 🔍")
 st.info("Este buscador permite encontrar cursos de Magisteres en Canvas basandose en la fecha de inicio del curso y sumandole un mes para determinar si está activo o no (ej: inicio = 2/3/25 + 1 mes = termino 2/4/25). Ya que generalmente no se coloca la fecha de finalización en la configuracion. Asi que tener presente esto.")
 
-# Mostrar checkbox antes del botón
-show_active_only = st.checkbox("Solo activos")
+# Usar un estado de sesión para controlar el acceso
+if "acceso_permitido" not in st.session_state:
+    st.session_state.acceso_permitido = False
 
-# Botón para comenzar a cargar los cursos
-if st.button('Buscar cursos!!'):
-    account = canvas_request(session, "get", f"/accounts/{account}/sub_accounts", paginated=True)
-    if account:
-        for item in account:
-            st.write(f"### 🔹 {item['name']} (ID: {item['id']})")
-            subaccounts = canvas_request(session, "get", f"/accounts/{item['id']}/sub_accounts", paginated=True)
-            if subaccounts:
-                for subaccount in subaccounts:
-                    if clean_string("magister") in clean_string(subaccount['name']):
-                        st.write(f"##### 🔸 {subaccount['name']} (ID: {subaccount['id']})")
-                        courses = canvas_request(session, "get", f"/accounts/{subaccount['id']}/courses", paginated=True)
-                        if courses:
-                            for course in courses:
-                                # Filtrar blueprints
-                                course_info = canvas_request(session, "get", f"/courses/{course['id']}")
-                                if course_info.get("blueprint") == True:
-                                    continue
-                                if course_info:
-                                    start_date = course_info.get("start_at")  # Obtener fecha de inicio
-                                    status = get_course_status(start_date)  # Evaluar estado del curso
-                                    formatted_date = format_date(start_date)  # Formatear la fecha
-
-                                    # Si el checkbox está marcado, mostrar solo los cursos activos
-                                    if show_active_only and status != "✅ Curso Activo":
-                                        continue
-
-                                    # Mostrar curso con su estado y fecha de inicio, y convertir el nombre en enlace
-                                    course_link = f"[**{course['name']}**]({LINK_URL}/courses/{course['id']})"
-                                    st.write(f"📚 {course_link} ({course['sis_course_id']}) - {status} - 🗓️ Fecha de inicio: {formatted_date}")
-
+password = st.text_input("Ingrese la contraseña para continuar:", type="password")
+if st.button("Validar contraseña"):
+    if password == PASSWORD_CORRECTA:
+        st.session_state.acceso_permitido = True
+        st.success("✅ Contraseña correcta. Ahora puedes buscar los cursos.")
     else:
-        st.error("Error en la petición")
+        st.session_state.acceso_permitido = False
+        st.error("❌ Contraseña incorrecta. Inténtelo de nuevo.")
+
+if st.session_state.acceso_permitido:
+    show_active_only = st.checkbox("Solo activos")
+
+    if st.button('Buscar cursos!!'):
+        st.info("Cargando información, por favor espere...")
+        account_data = canvas_request(session, "get", f"/accounts/{account}/sub_accounts", paginated=True)
+
+        if account_data:
+            for item in account_data:
+                st.write(f"### 🔹 {item['name']} (ID: {item['id']})")
+                subaccounts = canvas_request(session, "get", f"/accounts/{item['id']}/sub_accounts", paginated=True)
+                if subaccounts:
+                    for subaccount in subaccounts:
+                        if clean_string("magister") in clean_string(subaccount['name']):
+                            st.write(f"##### 🔸 {subaccount['name']} (ID: {subaccount['id']})")
+                            courses = canvas_request(session, "get", f"/accounts/{subaccount['id']}/courses", paginated=True)
+                            if courses:
+                                for course in courses:
+                                    course_info = canvas_request(session, "get", f"/courses/{course['id']}")
+                                    if course_info.get("blueprint") == True:
+                                        continue
+                                    if course_info:
+                                        start_date = course_info.get("start_at")
+                                        status = get_course_status(start_date)
+                                        formatted_date = format_date(start_date)
+
+                                        if show_active_only and status != "✅ Curso Activo":
+                                            continue
+
+                                        course_link = f"[**{course['name']}**]({LINK_URL}/courses/{course['id']})"
+                                        st.write(f"📚 {course_link} ({course['sis_course_id']}) - {status} - 🗓️ Fecha de inicio: {formatted_date}")
+
+        else:
+            st.error("Error en la petición")
+else:
+    st.warning("🔒 Ingrese la contraseña correcta y haga clic en 'Validar contraseña' para continuar.")
